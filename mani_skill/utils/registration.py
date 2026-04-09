@@ -124,11 +124,11 @@ def register(
     assets.DATA_GROUPS[name] = asset_download_ids
 
 
-class TimeLimitWrapper(gym.Wrapper):
+class TimeLimitWrapper(gym.wrappers.TimeLimit):
     """like the standard gymnasium timelimit wrapper but fixes truncated variable to be a torch tensor and batched"""
 
     def __init__(self, env: gym.Env, max_episode_steps: int):
-        super().__init__(env)
+        super().__init__(env, max_episode_steps=max_episode_steps)
         prev_frame_locals = sys._getframe(1).f_locals
         frame = sys._getframe(1)
         # check for user supplied max_episode_steps during gym.make calls
