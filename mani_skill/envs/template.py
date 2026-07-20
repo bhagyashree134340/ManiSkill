@@ -1,3 +1,4 @@
+# pyright: reportUnusedImport=false
 """
 Code for a minimal environment/task with just a robot being loaded. We recommend copying this template and modifying as you need.
 
@@ -127,12 +128,12 @@ class CustomEnv(BaseEnv):
     def _setup_sensors(self, options: dict):
         # default code here will setup all sensors. You can add additional code to change the sensors e.g.
         # if you want to randomize camera positions
-        return super()._setup_sensors()
+        return super()._setup_sensors(options)
 
     def _load_lighting(self, options: dict):
         # default code here will setup all lighting. You can add additional code to change the lighting e.g.
         # if you want to randomize lighting in the scene
-        return super()._load_lighting()
+        return super()._load_lighting(options)
 
     """
     Episode Initialization Code
@@ -155,7 +156,7 @@ class CustomEnv(BaseEnv):
     the code below all impact some part of `self.step` function
     """
 
-    def evaluate(self, obs: Any):
+    def evaluate(self):
         # this function is used primarily to determine success and failure of a task, both of which are optional. If a dictionary is returned
         # containing "success": bool array indicating if the env is in success state or not, that is used as the terminated variable returned by
         # self.step. Likewise if it contains "fail": bool array indicating the opposite (failure state or not) the same occurs. If both are given
@@ -165,8 +166,8 @@ class CustomEnv(BaseEnv):
         # `_get_obs_extra` and `_compute_dense_reward`. Note that as everything is batched, you must return a batched array of
         # `self.num_envs` booleans (or 0/1 values) for success an dfail as done in the example below
         return {
-            "success": torch.zeros(self.num_envs, device=self.device, dtype=bool),
-            "fail": torch.zeros(self.num_envs, device=self.device, dtype=bool),
+            "success": torch.zeros(self.num_envs, device=self.device, dtype=torch.bool),
+            "fail": torch.zeros(self.num_envs, device=self.device, dtype=torch.bool),
         }
 
     def _get_obs_extra(self, info: dict):
@@ -198,8 +199,8 @@ class CustomEnv(BaseEnv):
         # state["goal_pos"] = add_your_non_sim_state_data_here
         return state
 
-    def set_state_dict(self, state):
+    def set_state_dict(self, state, env_idx: torch.Tensor = None):
         # this function complements get_state and sets any non simulation state related data correctly so the environment behaves
         # the exact same in terms of output rewards, observations, success etc. should you reset state to a given state and take the same actions
-        self.goal_pos = state["goal_pos"]
-        super().set_state_dict(state)
+        # self.goal_pos = state["goal_pos"]
+        super().set_state_dict(state, env_idx)

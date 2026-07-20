@@ -35,6 +35,10 @@ class ActorBuilder(SAPIENActorBuilder):
         self._procedural_shapes = []
         """procedurally generated shapes to attach"""
 
+    def set_scene(self, scene: ManiSkillScene):
+        self.scene = scene
+        return self
+
     def set_scene_idxs(
         self,
         scene_idxs: Optional[
@@ -214,7 +218,7 @@ class ActorBuilder(SAPIENActorBuilder):
 
         if self.initial_pose is None:
             logger.warn(
-                f"No initial pose set for actor builder of {self.name}, setting to default pose q=[1,0,0,0], p=[0,0,0]. Not setting reasonable initial poses may slow down simulation, see https://github.com/haosulab/ManiSkill/issues/421."
+                f"No initial pose set for actor builder of {self.name}, setting to default pose q=[1,0,0,0], p=[0,0,0]. Not setting reasonable initial poses may slow down simulation, see https://github.com/mani-skill/ManiSkill/issues/421."
             )
             self.initial_pose = Pose.create(sapien.Pose())
         else:
