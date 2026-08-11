@@ -64,7 +64,7 @@ class SmashWall(BaseEnv):
 
     wall_length: int = 5  # number of blocks in the wall
     wall_height: int = 3  # number of blocks in the wall
-    block_half_size: float = 0.05  # size of each block in the wall
+    block_half_size: float = 0.02  # size of each block in the wall
 
     def __init__(self, *args, robot_uids="panda", robot_init_qpos_noise=0.02, **kwargs):
         self.robot_init_qpos_noise = robot_init_qpos_noise
@@ -136,8 +136,12 @@ class SmashWall(BaseEnv):
         # this is just like _sensor_configs, but for adding cameras used for rendering when you call env.render()
         # when render_mode="rgb_array" or env.render_rgb_array()
         # Another feature here is that if there is a camera called render_camera, this is the default view shown initially when a GUI is opened
-        pose = sapien_utils.look_at([1.0, 1.5, 0.6], [0.0, 0.0, 0.35])
-        return [CameraConfig("render_camera", pose, 512, 512, 1, 0.01, 100)]
+        pose = sapien_utils.look_at([1.0, 0.2, 0.6], [0.0, 0.0, 0.35])
+        pose2 = sapien_utils.look_at([0.3, 0.0, 0.6], [-0.1, 0.0, 0.1])
+        return [
+            CameraConfig("render_camera", pose, 512, 512, 1, 0.01, 100),
+            CameraConfig("render_camera2", pose2, 512, 512, 1, 0.01, 100),
+        ]
 
     def _setup_sensors(self, options: dict):
         # default code here will setup all sensors. You can add additional code to change the sensors e.g.
