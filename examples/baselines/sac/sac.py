@@ -12,6 +12,7 @@ from mani_skill.utils import gym_utils
 from mani_skill.utils.wrappers.flatten import FlattenActionSpaceWrapper
 from mani_skill.utils.wrappers.record import RecordEpisode
 from mani_skill.vector.wrappers.gymnasium import ManiSkillVectorEnv
+from third_party.ManiSkill.examples.baselines.sac.replay_buffer import ReplayBufferSample
 
 import gymnasium as gym
 import numpy as np
@@ -23,6 +24,10 @@ from torch.utils.tensorboard import SummaryWriter
 import tyro
 
 import mani_skill.envs
+import mani_skill.envs.tasks.tabletop.wall_bypass
+import mani_skill.envs.tasks.tabletop.maze_drive
+
+from her import HERReplayBuffer
 
 
 @dataclass
@@ -59,7 +64,7 @@ class Args:
     # Environment specific arguments
     env_id: str = "PickCube-v1"
     """the id of the environment"""
-    env_vectorization: str = "gpu"
+    env_vectorization: str = "cpu"
     """the type of environment vectorization to use"""
     num_envs: int = 16
     """the number of parallel environments"""
@@ -75,7 +80,7 @@ class Args:
     """the number of steps to run in each evaluation environment during evaluation"""
     reconfiguration_freq: Optional[int] = None
     """how often to reconfigure the environment during training"""
-    eval_reconfiguration_freq: Optional[int] = 1
+    eval_reconfiguration_freq: Optional[int] = None
     """for benchmarking purposes we want to reconfigure the eval environment each reset to ensure objects are randomized in some tasks"""
     eval_freq: int = 25
     """evaluation frequency in terms of iterations"""
@@ -91,7 +96,7 @@ class Args:
     """the replay memory buffer size"""
     buffer_device: str = "cuda"
     """where the replay buffer is stored. Can be 'cpu' or 'cuda' for GPU"""
-    gamma: float = 0.8
+    gamma: float = 0.99
     """the discount factor gamma"""
     tau: float = 0.01
     """target smoothing coefficient"""
@@ -126,13 +131,8 @@ class Args:
     steps_per_env: int = 0
     """the number of steps each parallel env takes per iteration"""
 
-@dataclass
-class ReplayBufferSample:
-    obs: torch.Tensor
-    next_obs: torch.Tensor
-    actions: torch.Tensor
-    rewards: torch.Tensor
-    dones: torch.Tensor
+
+    
 class ReplayBuffer:
     def __init__(self, env, num_envs: int, buffer_size: int, storage_device: torch.device, sample_device: torch.device):
         self.buffer_size = buffer_size
@@ -289,7 +289,7 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
 
     ####### Environment setup #######
-    env_kwargs = dict(obs_mode="state", render_mode="rgb_array", sim_backend="gpu")
+    env_kwargs = dict(obs_mode="state", render_mode="rgb_array", sim_backend="cpu")
     if args.control_mode is not None:
         env_kwargs["control_mode"] = args.control_mode
     envs = gym.make(args.env_id, num_envs=args.num_envs if not args.evaluate else 1, reconfiguration_freq=args.reconfiguration_freq, **env_kwargs)
@@ -317,8 +317,8 @@ if __name__ == "__main__":
         if args.track:
             import wandb
             config = vars(args)
-            config["env_cfg"] = dict(**env_kwargs, num_envs=args.num_envs, env_id=args.env_id, reward_mode="normalized_dense", env_horizon=max_episode_steps, partial_reset=args.partial_reset)
-            config["eval_env_cfg"] = dict(**env_kwargs, num_envs=args.num_eval_envs, env_id=args.env_id, reward_mode="normalized_dense", env_horizon=max_episode_steps, partial_reset=False)
+            config["env_cfg"] = dict(**env_kwargs, num_envs=args.num_envs, env_id=args.env_id, reward_mode="sparse", env_horizon=max_episode_steps, partial_reset=args.partial_reset)
+            config["eval_env_cfg"] = dict(**env_kwargs, num_envs=args.num_eval_envs, env_id=args.env_id, reward_mode="sparse", env_horizon=max_episode_steps, partial_reset=False)
             wandb.init(
                 project=args.wandb_project_name,
                 entity=args.wandb_entity,
@@ -365,17 +365,37 @@ if __name__ == "__main__":
         alpha = args.alpha
 
     envs.single_observation_space.dtype = np.float32
+    # rb = HERReplayBuffer(
+    #     env=envs,
+    #     num_envs=args.num_envs,
+    #     buffer_size=args.buffer_size,
+    #     storage_device=torch.device(args.buffer_device),
+    #     sample_device=device,
+    #     her_ratio=0.8,
+    #     goal_radius=envs.unwrapped.goal_radius,
+    #     goal_slice=slice(28, 31),
+    # )
+
     rb = ReplayBuffer(
         env=envs,
         num_envs=args.num_envs,
         buffer_size=args.buffer_size,
         storage_device=torch.device(args.buffer_device),
-        sample_device=device
+        sample_device=device,
     )
-
 
     # TRY NOT TO MODIFY: start the game
     obs, info = envs.reset(seed=args.seed) # in Gymnasium, seed is given to reset() instead of seed()
+
+    # After: obs, info = envs.reset()
+
+    print("Observation shape:", obs.shape)
+    print("Observation type:", type(obs))
+    if isinstance(obs, dict):
+        print("Observation keys:", obs.keys())
+        for k, v in obs.items():
+            print(f"  {k}: shape {v.shape}")
+
     eval_obs, _ = eval_envs.reset(seed=args.seed)
     global_step = 0
     global_update = 0
@@ -407,10 +427,10 @@ if __name__ == "__main__":
                 eval_metrics_mean[k] = mean
                 if logger is not None:
                     logger.add_scalar(f"eval/{k}", mean, global_step)
-            pbar.set_description(
-                f"success_once: {eval_metrics_mean['success_once']:.2f}, "
-                f"return: {eval_metrics_mean['return']:.2f}"
-            )
+            # pbar.set_description(
+            #     f"success_once: {eval_metrics_mean['success_once']:.2f}, "
+            #     f"return: {eval_metrics_mean['return']:.2f}"
+            # )
             if logger is not None:
                 eval_time = time.perf_counter() - stime
                 cumulative_times["eval_time"] += eval_time
@@ -442,6 +462,11 @@ if __name__ == "__main__":
                 actions = actions.detach()
 
             # TRY NOT TO MODIFY: execute the game and log data.
+            # BEFORE taking the action
+            achieved_goal = envs.unwrapped.agent.tcp.pose.p.clone()
+            desired_goal = envs.unwrapped.goal_region.pose.p.clone()
+
+            # Take action
             next_obs, rewards, terminations, truncations, infos = envs.step(actions)
             real_next_obs = next_obs.clone()
             if args.bootstrap_at_done == 'never':
@@ -460,8 +485,29 @@ if __name__ == "__main__":
                 real_next_obs[need_final_obs] = infos["final_observation"][need_final_obs]
                 for k, v in final_info["episode"].items():
                     logger.add_scalar(f"train/{k}", v[done_mask].float().mean(), global_step)
+                if global_step % 1000 == 0:
+                    for k in ("collision", "collision_steps", "collision_events"):
+                        if k in final_info:
+                            logger.add_scalar(
+                                f"train/{k}",
+                                final_info[k][done_mask].float().mean(),
+                                global_step,
+                            )
 
-            rb.add(obs, real_next_obs, actions, rewards, stop_bootstrap)
+            next_achieved_goal = envs.unwrapped.agent.tcp.pose.p.clone()
+            episode_done = terminations | truncations
+
+            rb.add(
+                obs,
+                real_next_obs,
+                actions,
+                rewards,
+                stop_bootstrap,
+                # achieved_goal,
+                # desired_goal,
+                # next_achieved_goal,
+                # episode_done,
+            )
 
             # TRY NOT TO MODIFY: CRUCIAL step easy to overlook
             obs = next_obs
@@ -562,3 +608,4 @@ if __name__ == "__main__":
         print(f"model saved to {model_path}")
         writer.close()
     envs.close()
+

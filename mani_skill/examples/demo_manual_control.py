@@ -10,6 +10,13 @@ from mani_skill.envs.sapien_env import BaseEnv
 from mani_skill.utils import common, visualization
 from mani_skill.utils.wrappers import RecordEpisode
 
+import pyspacemouse
+
+# with pyspacemouse.open(device_index=1) as device:
+#     state = device.read()
+
+device = pyspacemouse.open()
+
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -33,6 +40,7 @@ def parse_args():
 
 
 def main():
+    
     np.set_printoptions(suppress=True, precision=3)
     args = parse_args()
 
@@ -48,19 +56,20 @@ def main():
     record_dir = args.record_dir
     if record_dir:
         record_dir = record_dir.format(env_id=args.env_id)
-        env = RecordEpisode(env, record_dir, render_mode=args.render_mode)
+        env = RecordEpisode(env, record_dir)
 
     print("Observation space", env.observation_space)
     print("Action space", env.action_space)
-    print("Control mode", env.control_mode)
-    print("Reward mode", env.reward_mode)
+    print("Control mode", env.unwrapped.control_mode)
+    print("Reward mode", env.unwrapped.reward_mode)
 
     obs, _ = env.reset()
     after_reset = True
 
     # Viewer
     if args.enable_sapien_viewer:
-        env.render_human()
+        env.unwrapped.render_human()
+
     renderer = visualization.ImageRenderer()
     # disable all default plt shortcuts that are lowercase letters
     plt.rcParams["keymap.fullscreen"].remove("f")
@@ -79,26 +88,36 @@ def main():
         if not args.enable_sapien_viewer:
             return
         while True:
-            env.render_human()
-            sapien_viewer = env.viewer
+            env.unwrapped.render_human()  
+            sapien_viewer = env.unwrapped.viewer
             if sapien_viewer.window.key_down("0"):
                 break
 
     # Embodiment
-    has_base = "base" in env.agent.controller.configs
-    num_arms = sum("arm" in x for x in env.agent.controller.configs)
-    has_gripper = any("gripper" in x for x in env.agent.controller.configs)
+    has_base = "base" in env.unwrapped.agent.controller.configs
+    num_arms = sum("arm" in x for x in env.unwrapped.agent.controller.configs)
+    has_gripper = any("gripper" in x for x in env.unwrapped.agent.controller.configs)
     gripper_action = 1
     EE_ACTION = 0.1
+    
 
     while True:
+
+        state = device.read()
         # -------------------------------------------------------------------------- #
         # Visualization
         # -------------------------------------------------------------------------- #
         if args.enable_sapien_viewer:
-            env.render_human()
+            env.unwrapped.render_human()
 
-        render_frame = env.render().cpu().numpy()[0]
+
+        rendered = env.render()
+        if hasattr(rendered, "cpu"):
+            render_frame = rendered.cpu().numpy()[0]
+        elif isinstance(rendered, np.ndarray):
+            render_frame = rendered[0] if rendered.ndim == 4 else rendered
+        else:
+            render_frame = None
 
         if after_reset:
             after_reset = False
@@ -111,11 +130,32 @@ def main():
         # Interaction
         # -------------------------------------------------------------------------- #
         # Input
-        renderer(render_frame)
+        if render_frame is not None:
+            renderer(render_frame)
+
+        # if render_frame is not None:
+        #     plt.figure()
+        #     plt.imshow(render_frame)
+        #     plt.show(block=True)
+
+        # print("rendered:", type(rendered), getattr(rendered, "shape", None))
+        # print("render_frame:", type(render_frame), getattr(render_frame, "shape", None))
+
+        # if render_frame is not None:
+        #     print(
+        #         "pixels:",
+        #         "min =", render_frame.min(),
+        #         "max =", render_frame.max(),
+        #         "mean =", render_frame.mean()
+        #     )
+
         # key = opencv_viewer.imshow(render_frame.cpu().numpy()[0])
+
         key = renderer.last_event.key if renderer.last_event is not None else None
         body_action = np.zeros([3])
         base_action = np.zeros([2])  # hardcoded for fetch robot
+
+        state = device.read()
 
         # Parse end-effector action
         if (
@@ -157,32 +197,46 @@ def main():
         # End-effector
         if num_arms > 0:
             # Position
-            if key == "i":  # +x
-                ee_action[0] = EE_ACTION
-            elif key == "k":  # -x
-                ee_action[0] = -EE_ACTION
-            elif key == "j":  # +y
-                ee_action[1] = EE_ACTION
-            elif key == "l":  # -y
-                ee_action[1] = -EE_ACTION
-            elif key == "u":  # +z
-                ee_action[2] = EE_ACTION
-            elif key == "o":  # -z
-                ee_action[2] = -EE_ACTION
 
-            # Rotation (axis-angle)
-            if key == "1":
-                ee_action[3:6] = (1, 0, 0)
-            elif key == "2":
-                ee_action[3:6] = (-1, 0, 0)
-            elif key == "3":
-                ee_action[3:6] = (0, 1, 0)
-            elif key == "4":
-                ee_action[3:6] = (0, -1, 0)
-            elif key == "5":
-                ee_action[3:6] = (0, 0, 1)
-            elif key == "6":
-                ee_action[3:6] = (0, 0, -1)
+            
+            
+
+            ee_action[0] = state.x
+            ee_action[1] = state.y
+            ee_action[2] = state.z
+            ee_action[3] = state.roll
+            ee_action[4] = state.pitch
+            ee_action[5] = state.yaw
+
+            print(ee_action)
+
+
+            # if key == "i":  # +x
+            #     ee_action[0] = EE_ACTION
+            # elif key == "k":  # -x
+            #     ee_action[0] = -EE_ACTION
+            # elif key == "j":  # +y
+            #     ee_action[1] = EE_ACTION
+            # elif key == "l":  # -y
+            #     ee_action[1] = -EE_ACTION
+            # elif key == "u":  # +z
+            #     ee_action[2] = EE_ACTION
+            # elif key == "o":  # -z
+            #     ee_action[2] = -EE_ACTION
+
+            # # Rotation (axis-angle)
+            # if key == "1":
+            #     ee_action[3:6] = (1, 0, 0)
+            # elif key == "2":
+            #     ee_action[3:6] = (-1, 0, 0)
+            # elif key == "3":
+            #     ee_action[3:6] = (0, 1, 0)
+            # elif key == "4":
+            #     ee_action[3:6] = (0, -1, 0)
+            # elif key == "5":
+            #     ee_action[3:6] = (0, 0, 1)
+            # elif key == "6":
+            #     ee_action[3:6] = (0, 0, -1)
 
         # Gripper
         if has_gripper:
@@ -199,12 +253,12 @@ def main():
             gripper_action = 1
             after_reset = True
             continue
-        elif key == None:  # exit
+        elif key == "q":  # exit
             break
 
         # Visualize observation
         if key == "v":
-            if "pointcloud" in env.obs_mode:
+            if "pointcloud" in env.unwrapped.obs_mode:
                 import trimesh
 
                 xyzw = obs["pointcloud"]["xyzw"]
@@ -222,7 +276,7 @@ def main():
             base=base_action, arm=ee_action, body=body_action, gripper=gripper_action
         )
         action_dict = common.to_tensor(action_dict)
-        action = env.agent.controller.from_action_dict(action_dict)
+        action = env.unwrapped.agent.controller.from_action_dict(action_dict)
 
         obs, reward, terminated, truncated, info = env.step(action)
         print("reward", reward)

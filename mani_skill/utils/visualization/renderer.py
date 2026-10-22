@@ -31,7 +31,7 @@ class ImageRenderer:
         if not self._image:
             plt.ion()
             self.fig = plt.figure()
-            self._image = plt.imshow(buffer, animated=True)
+            self._image = plt.imshow(buffer)
             self.fig.canvas.mpl_connect("key_press_event", self.key_press_handler)
             self.fig.canvas.mpl_connect("key_release_event", self.key_release_handler)
         else:

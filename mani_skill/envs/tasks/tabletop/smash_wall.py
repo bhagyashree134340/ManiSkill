@@ -94,6 +94,7 @@ class SmashWall(BaseEnv):
         super()._load_agent(options, sapien.Pose(p=[-0.615, 0.0, 0.0]))
 
     def _load_scene(self, options: dict):
+        self.wall_blocks = []
         self.table_scene = TableSceneBuilder(
             env=self, robot_init_qpos_noise=self.robot_init_qpos_noise
         )
@@ -206,7 +207,12 @@ class SmashWall(BaseEnv):
         #     "success": torch.zeros(self.num_envs, device=self.device, dtype=torch.bool),
         #     "fail": torch.zeros(self.num_envs, device=self.device, dtype=torch.bool),
         # }
-        return {}
+
+        return {
+            "success": torch.zeros(self.num_envs, device=self.device, dtype=torch.bool)
+        }
+
+        # return {}
 
     def _get_obs_extra(self, info: dict):
         # should return an dict of additional observation data for your tasks
